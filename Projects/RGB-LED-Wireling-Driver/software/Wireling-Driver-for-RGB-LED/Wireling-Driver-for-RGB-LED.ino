@@ -17,7 +17,7 @@
 #include <Wire.h>
 #include <Wireling.h>
 #include <FastLED.h>            // For interfacing with the RGB LED
-#include "SX1505.h"             // For interfacing with Joystick and Rotary Switch Wirelings
+#include <SX1505.h>             // For interfacing with Joystick and Rotary Switch Wirelings
 #include <ATtiny841Lib.h>       // For ATtiny841 on Cap Touch Wireling
 #include <CapTouchWireling.h>   // For Cap Touch Wireling
 
