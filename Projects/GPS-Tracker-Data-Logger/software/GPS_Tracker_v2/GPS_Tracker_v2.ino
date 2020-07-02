@@ -57,7 +57,7 @@ void setup()
 {
   Gps_Serial.begin(GPSBaud);
   SerialMonitorInterface.begin(115200);
-  while(!SerialMonitorInterface) { delay(5000);}; // Pauses 5 seconds until Serial Monitor is opened
+  if(!SerialMonitorInterface) { delay(5000);}; // Pauses 5 seconds if Serial Monitor is not opened
 
   SerialMonitorInterface.println("Initializing Flash Memory...");
   SerialMonitorInterface.println();
