@@ -2,48 +2,48 @@
   TinyCircuits RGB LED Audio Visualizer
 
   This sketch takes input from the MEMS Microphone
-  Whisker and outputs a lighting effect on a strand
+  Wireling and outputs a lighting effect on a strand
   of RGB LEDs. Brightness can be adjusted if a
-  Rotary Switch Whisker is used as well.
+  Rotary Switch Wireling is used as well.
 
   This code is set up in the following way
-  Port 0: LED Strand (line 35)
-    60 RGB LEDs are present in the strand. (line 33)
-  Port 1: Microphone Whisker (line 29)
-  Port 3: Rotary Switch Whisker (line 39)
-    10 positions are present on the rotary switch (line 48)
+  Port 0: LED Strand (line 30)
+    60 RGB LEDs are present in the strand. (line 29)
+  Port 1: Microphone Wireling (line 34)
+  Port 2: N/A
+  Port 3: Rotary Switch Wireling (line 38)
+    10 positions are present on the rotary switch (line 39)
 
   Written 15 July 2019
   By Hunter Hykes
-  Modified N/A
-  By N/A
+  Modified 14 July 2020
 
   https://TinyCircuits.com
 */
 
 #include <Wire.h>
+#include <Wireling.h>
 #include <FastLED.h>
-#include "SH7010.h"
-
-#define MIC_PIN A1 // Microphone whisker pin (port 1)
-#define MIC_PORT 1
-#define maxMicRange 511
-#define micMidpoint 255
+#include <SX1505.h>       // For interfacing with Joystick and Rotary Switch Wirelings
 
 #define NUM_LEDS 60
-#define LED_PIN A0 // port 0 on whisker board
+#define LED_PIN A0        // RGB LED Port
 #define LED_PORT 0
 #define COLOR_ORDER GRB
 
-#define NUM_POSITIONS 10 // number of positions on rotary switch
-#define ROT_PORT 3 // port 3 on whisker board
-SH7010 rotary = SH7010();
+#define MIC_PIN A1        // Microphone Wireling pin (Port 1)
+#define maxMicRange 511
+#define micMidpoint 255
 
-const int powerPin = 4;
+#define ROT_PORT 3        // Rotary Switch Wireling Port
+#define NUM_POSITIONS 10  // number of positions on Rotary Switch
+TinyRotary rotary = TinyRotary();
+
 const int brightness = 50;
 const int updateXLEDs = 2; // number of LEDs to populate with each sound
 const double totalDelay = 1000.0; // number of milliseconds to populate whole strip
 const double indDelay = totalDelay/NUM_LEDS; // number of milliseconds to delay after each LED
+
 CRGB leds[NUM_LEDS];
 CRGB color;
 CRGB prevColor;
@@ -51,87 +51,41 @@ CRGB prevColor;
 float sample;
 float prevSample;
 
-unsigned long frequency;
-unsigned long periodStart;
-unsigned long periodEnd;
-
-// Arduino setup Method
 void setup() {
   Wire.begin();
+  Wireling.begin();
+
+  // start communicaiton to the Rotary Switch Wireling
+  Wireling.selectPort(ROT_PORT);
+  rotary.begin();
+
+  // initialize RGB LEDs
   FastLED.addLeds<WS2812, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness(brightness);
   pinMode(LED_PIN, OUTPUT);
-  pinMode(powerPin, OUTPUT);
-  digitalWrite(powerPin, HIGH);
-
-  rotary.begin();
-  rotary.init();
-  selectPort(ROT_PORT);
-
   color = CRGB::Black;
   populateLEDs();
-  
+
   SerialUSB.begin(9600);
   delay(500);
 }
 
-// Arduino loop Method
 void loop() {
-  //selectPort(MIC_PORT);
-  sample = analogRead(MIC_PIN);   // get a new sample
-  //SerialUSB.println(sample);
+  sample = analogRead(MIC_PIN); // get a new microphone sample
+  SerialUSB.print("Mic: " + String(sample));
 
-  FastLED.setBrightness(setBright());
-  SerialUSB.println(setBright());
-  //frequency = getFrequency();
-  //SerialUSB.println(frequency);
-  //selectPort(LED_PORT);
+  FastLED.setBrightness(setBright()); // update brightness based on Rotary Switch reading
+  SerialUSB.println("\tRotary: " + String(setBright()));
+
   setColor();
   shiftLEDs();
   delay(indDelay);
   populateLEDs();
-
-  prevSample = sample;
-}
-
-void selectPort(int port) {
-  Wire.beginTransmission(0x70);
-  Wire.write(0x04 + port);
-  Wire.endTransmission();
-}
-
-int getSampleAmplitude() {
-  int minSample = maxMicRange;
-  int maxSample = 0;
-
-  if (sample > maxSample) {
-    maxSample = sample;
-  }
-  if (sample < minSample) {
-    minSample = sample;
-  }
-
-  return (minSample + maxSample) >> 1; // >> 1 is the same as dividing by 2
-}
-
-unsigned long getFrequency() {
-  unsigned long period;
-
-  if (prevSample < micMidpoint && sample >= micMidpoint) { // if midpoint is crossed with a positive slope
-    periodStart = periodEnd; // end of the previous period is the start of the new period
-    periodEnd = millis();
-    period = periodEnd - periodStart;
-    //SerialUSB.println(period);
-    return (1 / period);  // frequency = 1 / period
-  } else {
-    return 0.0;
-  }
 }
 
 void shiftLEDs() {
   for(int i = NUM_LEDS - 1; i >= updateXLEDs; i--) {
     leds[i] = leds[i - updateXLEDs];
-    //delay(indDelay);
   }
 }
 
@@ -146,19 +100,19 @@ void populateLEDs() {
 
 void setColor() {
   prevColor = color;
-  if (sample > micMidpoint + 223) {
+  if (sample > micMidpoint + 140) {
     color = CRGB::White;
-  } else if (sample > micMidpoint + 191) {
+  } else if (sample > micMidpoint + 120) {
     color = CRGB::Red;
-  } else if (sample > micMidpoint + 159) {
+  } else if (sample > micMidpoint + 100) {
     color = CRGB::Orange;
-  } else if (sample > micMidpoint + 127) {
+  } else if (sample > micMidpoint + 80) {
     color = CRGB::Yellow;
-  } else if (sample > micMidpoint + 95) {
+  } else if (sample > micMidpoint + 60) {
     color = CRGB::Green;
-  } else if (sample > micMidpoint + 63) {
+  } else if (sample > micMidpoint + 40) {
     color = CRGB::Blue;
-  } else if (sample > micMidpoint + 31) {
+  } else if (sample > micMidpoint + 20) {
     color = CRGB::Purple;
   } else {
     color = CRGB::Black;
