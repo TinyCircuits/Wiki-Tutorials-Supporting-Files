@@ -90,10 +90,10 @@ void setup()
       }
     }
   }
-  
+
   SerialMonitorInterface.println("Now initiating write mode.");
   SerialMonitorInterface.println();
-  
+
   // Init the GPS Module to wake mode
   pinMode(GPS_SYSONPin, INPUT);
   digitalWrite(GPS_ONOFFPin, LOW);
@@ -110,7 +110,7 @@ void setup()
   }
   SerialMonitorInterface.println("done.");
   delay(100);
-  
+
   char command[] = "$PSRF103,00,00,00,01*xx\r\n";
   for (int i = 0; i < 8; i++) {
     command[10] = i + '0';
@@ -124,7 +124,7 @@ void setup()
     Gps_Serial.print(command);
     delay(20);
   }
-  
+
   SerialMonitorInterface.println();
 
 }
@@ -147,7 +147,7 @@ void loop() {
       logNMEA(2);
     }
   }
-  
+
   // Waits 10 seconds before reading next NMEA string
   while (millis() - startTime < 10000) {
     Gps_Serial.read(); // clears GPS serial buffer
