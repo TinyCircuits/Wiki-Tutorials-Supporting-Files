@@ -5,7 +5,7 @@
 #define CHIPSET     WS2811
 #define NUM_LEDS    1
 
-#define BRIGHTNESS  128
+#define BRIGHTNESS  128  // Range of 0-255
 #define FRAMES_PER_SECOND 60
 
 bool gReverseDirection = false;
