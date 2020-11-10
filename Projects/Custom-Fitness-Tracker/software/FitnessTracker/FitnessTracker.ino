@@ -1,38 +1,37 @@
 //-------------------------------------------------------------------------------
 //  Fitness Tracker Sketch
-//  Last Updated 16 August 2019
 //
-//  The fitness tracker uses data collected from the pulse oximetry and accelerometer wirelings
+//  The fitness tracker uses data collected from the pulse oximetry and accelerometer Wirelings
 //  to count your steps, determine your sleep quality, and monitor your vital signs.
 //  Abnormalities trigger an LRA buzzer, which can be felt by the user.
 //  Both the raw and interpreted data is sent to a microSD card every DATA_INTERVAL seconds.
 //  (You can adjust the reporting interval by changing DATA_INTERVAL on line 39.)
 //  
 //  Note: The pulse oximetry sensor detects your heart rate optically and the accuracy of the readings
-//  is highly dependent on keeping a steady pressure between you and the sensor. The sensor will
-//  return an oxygen saturation of -999 when it detects that you are too far away to measure properly.
+//  is highly dependent on keeping a steady pressure between you and the sensor. 
 //  The best way to maintain a steady pressure is to use a clip (as used by hospital grade pulse ox sesnors)
 //  Another good way is a rubber band. We have found that fingers give the most accurate readings.
 //  This project is for educational purposes only!
 //
-//  Written by Zachary Lee, TinyCircuits http://TinyCircuits.com
+//  Written by Zachary Lee, August 2019
+//  Refactoring with Updated Libraries by Laveréna Wienclaw, November 2020
+//
+//  TinyCircuits http://TinyCircuits.com 
 //-------------------------------------------------------------------------------
 
 #include <SPI.h>
 #include <TinyScreen.h> // This library is used to print sensor values to a TinyScreen
-#include "BMA250.h" // Used to interface with the acceleromter wireling, which is used to track your steps
+#include "BMA250.h" // Used to interface with the acceleromter Wireling, which is used to track your steps
 #include <Wire.h>
-#include "Adafruit_DRV2605.h" // used to interface with the LRA wireling
+#include <Wireling.h>
+#include "Adafruit_DRV2605.h" // used to interface with the LRA Wireling
 #include <SdFat.h> // enables data to be logged to an sd card
 #include <RTCZero.h>  // enables date and time to be recorded with each sensor reading
-#include "MAX30105.h" // used to interface with the pulse oximetry sensor
-#include "heartRate.h"
+#include <MAX30101.h> // used to interface with the pulse oximetry sensor
 #include "sleepStages.h" // contains examples of ideal sleep chronologies, which are used as part of the sleep scoring algorithm 
-#include "spo2_algorithm.h" // calculates oxygen saturation
-#include <Wireling.h>
 
 Adafruit_DRV2605 drv; // lra sensor object
-MAX30105 particleSensor; // pulseOx sensor object
+MAX30101 pulseSensor = MAX30101(); // pulseOx sensor object
 BMA250 accel_sensor; // accelerometer sensor object
 
 // SD card variables
@@ -50,8 +49,7 @@ const int chipSelect = 10;
 TinyScreen display = TinyScreen(TinyScreenPlus);
 int background = TS_8b_Black; // sets the background color to black
 
-const int STEP_TRIGGER = 250; // The LRA wireling will notify you of inactivity if you complete less than half of this number of steps each hour. Step % is based on this * 16 waking hours.
-const float memsPin = A2; // used for microphone
+const int STEP_TRIGGER = 250; // The LRA Wireling will notify you of inactivity if you complete less than half of this number of steps each hour. Step % is based on this * 16 waking hours.
 const int DATA_INTERVAL = 30; // data is recorded to the microSD every DATA_INTERVAL seconds
 const bool DEBUG_MD = false; // if set to true, enables debug mode
 const int FAST_DATA_INTERVAL = DATA_INTERVAL * 1000; // performance optimization
@@ -59,15 +57,13 @@ const int AGE = 25; // age has a significant impact on sleep composition, so inp
 const int DELAY_INTERVAL = 2800; // specifies the delay between LRA pulses in ms
 int stepsTowardGoal = 0; // keeps track of how many steps you have taken the the past hour as compared to your goal. This will trigger inactivity pulses on the LRA
 
+
 // heart rate and oxygen concentration variables
 int heartData[2880] = {};
-uint32_t irBuffer[100]; //infrared LED sensor data
-uint32_t redBuffer[100];  //red LED sensor data
 int32_t bufferLength = 50; //Options: 50, 100, 200, 400, 800, 1000, 1600, 3200, the lower the faster the oxygen saturation calculation
-int32_t spo2; //SPO2 value
-int8_t validSPO2; //indicator to show if the SPO2 calculation is valid
+int32_t saturatedOxygen; //saturatedOxygen value
 int32_t heartRate; //heart rate value
-int8_t validHeartRate; //indicator to show if the heart rate calculation is valid
+
 
 /* Change these values to set the current time when you upload the sketch. */
 const byte seconds = 10;
@@ -89,10 +85,11 @@ const int BEDTIME_MINUTE = 53;
 const int BEDTIME_ALLOWANCE = 30; // see above
 
 // used to store which sensors are connected and if so, what port they are connected to. initial 0 value represents that they are not connected
-int microphoneSensorPresent = 0; // the microphone wireling is not used in this project, but we have included some code that will make it very easy to add if you so choose
-int accelSensorPresent = 0;
-int lraSensorPresent = 0;
-int pulseOxSensorPresent = 0;
+ // the microphone Wireling is not used in this project, but we have included some code that will make it very easy to add if you so choose
+const float memsPin = A0; // used for microphone
+int pulseSensorPort = 1;
+int lraSensorPort = 2;
+int accelSensorPort = 3;
 
 unsigned long stepTimestamps[STEP_TRIGGER] = {};
 unsigned long loopStart = 0;
@@ -108,27 +105,33 @@ int sleepMinutes[60] = {};
 #include <RTCZero.h>
 RTCZero rtc;
 
+
 // heart rate variables
 const byte RATE_SIZE = DATA_INTERVAL * 100; // Based on the data interval. this could take a lot of memory
 byte rates[RATE_SIZE]; //heartDataay of heart rates
-byte rateSpot = 0;
-long lastBeat = 0; //Time at which the last beat occurred
-float beatsPerMinute = 0.00; // current bmp
 int beatAvg = 0; // represents the average heart rate over the DATA_INTERVAL
-int validMeasurements = 0; // used to represent how many valid measurments have been taken so far
 
-
-uint8_t amtNotifications = 0;
-int noiseReduced = 0;
-int stepReduced = 0;
-int pulseReduced = 0;
-bool started = false; // once a buzz sequence has begun, it must complete
-
-uint8_t vibratePin = 4;
-uint8_t vibratePinActive = HIGH;
-uint8_t vibratePinInactive = LOW;
 unsigned long bedtimeEpoch = 0;
 int stepArr[4] = {};
+
+void initStepTimestamps();
+bool validatePorts();
+int updatePedometer();
+void createString(String &, String &, bool , int , bool &, unsigned long &);
+void validateSD(String , String , bool );
+void wakeMinute(int , int &, bool &);
+void sleepMovement(unsigned long &one, unsigned long &two, unsigned long &five, unsigned long &fifteen);
+int getTotalSteps();
+void buzzLRA();
+void checkButtons(unsigned long &screenClearTime);
+float actualDeepPercentage();
+int expectedDeepPercentage();
+float actualLightPercentage();
+int expectedLightPercentage();
+float actualREMPercentage();
+int expectedREMPercentage();
+float normalizedCrossCorrelation(const byte First[], byte Second[], float whichArray);
+void dailyStepReset();
 
 void setup(void)
 {
@@ -138,30 +141,28 @@ void setup(void)
   initStepTimestamps();
   Wire.begin();
   Wireling.begin();
-  
-  checkPorts(); // determines what Wireling is attached to which port, if any
-  if (!validatePorts()) {
-    SerialUSB.println("Critical error with port assignment, please assign ports manually!");
-  }
-  uint8_t effect = 1;
-  if (lraSensorPresent) {
+
+//  checkPorts(); // determines what Wireling is attached to which port, if any
+//  if (!validatePorts()) {
+//    SerialUSB.println("Critical error with port assignment, please assign ports manually!");
+//  }
+  if (lraSensorPort) {
     drv.begin();
     drv.selectLibrary(1);
     drv.setMode(DRV2605_MODE_INTTRIG);
+    drv.useLRA();
   }
 
-  if (accelSensorPresent) {
+  if (accelSensorPort) {
     // Set the cursor to the following coordinates before it prints "BMA250 Test"
-    Wireling.selectPort(accelSensorPresent - 1);
+    Wireling.selectPort(accelSensorPort);
     accel_sensor.begin(BMA250_range_4g, BMA250_update_time_16ms); // Sets up the BMA250 accel_sensorerometer
   }
 
-  if (pulseOxSensorPresent)
+  if (pulseSensorPort)
   {
-    Wireling.selectPort(pulseOxSensorPresent - 1);
-    particleSensor.setup(); //Configure sensor with default settings
-    particleSensor.setPulseAmplitudeRed(0x0A); //Turn Red LED to low to indicate sensor is running
-    particleSensor.setPulseAmplitudeGreen(0); //Turn off Green LED
+    Wireling.selectPort(pulseSensorPort);
+    pulseSensor.begin(); //Configure sensor with default settings
   }
 
   // Check for SD card
@@ -206,7 +207,8 @@ void setup(void)
   display.setFont(thinPixel7_10ptFontInfo);
   display.fontColor(TS_8b_White, background);
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 void loop() {
   String displayString = ""; // written once in the logfile to provide column headings along with the data
   String dataString = ""; // written to the logfile every data interval seconds. does not contain headings, just csv data only. see createstring for more details
@@ -214,18 +216,10 @@ void loop() {
   static unsigned long validationEpoch = 0; // represents the hour you fell asleep
   static unsigned long screenClearTime = millis();
   static int currentHour = rtc.getHours(); // performance optimization
-  static unsigned long timeUpdate = millis();
   static bool validatedPreviously = false; // avoids the need to constantly validate whether it is past bedtime or not by store the fact within this variable.
   // note that the many areas of the sketch are not executed except at night when calculating or recording sleep quality.
-  static unsigned long inactivityCounter = millis();
   static unsigned long batt = millis(); // used to check the battery voltage and run some other code every data reporting inverval, default 30 seconds
   static unsigned long goalTimer = millis(); // used to check if you are meeting your daily goals
-  static int nightCounter = 0;
-  static int loopCounter = 0;
-  static float mean = 0.00;
-  static float micReading = 0.00;
-  static int highestBeat = 0;
-  static int lowestBeat = 0;
   static int heartIndex = 0;
   // these variables are used to keep track of how many steps were taken in recent minutes
   static unsigned long one = millis();
@@ -234,20 +228,26 @@ void loop() {
   static unsigned long fifteen = millis();
   static unsigned long oneMinute = millis();
 
-  /*if (microphoneSensorPresent) { // example of how you would check for and reference the MEMS microphone wireling
-    micReading = analogRead(memsPin);
-  }*/
-  Wireling.selectPort(pulseOxSensorPresent - 1);
-  checkPulse(); // this needs to run as often as possible
-  Wireling.selectPort(accelSensorPresent - 1);
+  int micReading = analogRead(memsPin); // example of how you would check for and reference the MEMS microphone Wireling
+
+  Wireling.selectPort(pulseSensorPort);  
+  checkPulse();
+  
+  Wireling.selectPort(accelSensorPort);
   updatePedometer();
   if (millis() - batt > FAST_DATA_INTERVAL) // record battery voltage when needed
   {
     createString(displayString, dataString, firstSD, currentHour, validatedPreviously, validationEpoch); //create strings from recent data
     validateSD(dataString, displayString, firstSD); // write the strings to the SD card after validating the connection to the SD card is intact
     if (currentHour >= BEDTIME_HOUR && (validatedPreviously || bedtimeValidation(validatedPreviously, validationEpoch))) { // if you are asleep
-      heartData[heartIndex] = beatAvg;
-      ++heartIndex;
+      Wireling.selectPort(pulseSensorPort);
+      if(pulseSensor.update()){
+        if (pulseSensor.pulseValid()) {
+          beatAvg = pulseSensor.BPM();
+          heartData[heartIndex] = pulseSensor.BPM();
+          ++heartIndex;
+        }
+      }
       wakeMinute(validationEpoch, emptyIntsCounter, validatedPreviously); // check if the user has been awake and moving about recently
     }
     batt = millis();
@@ -260,7 +260,7 @@ void loop() {
     if (millis() - goalTimer > 3600000) // if it is near the end of an hour and you are not on pace to meet your daily step goal
     {
       stepsTowardGoal = getTotalSteps() - stepsTowardGoal;
-      if (stepsTowardGoal < STEP_TRIGGER * 0.5) // you have completed less than half the of the steps you would need to have compelted in the past hour to be on pace to meet your goal.
+      if (stepsTowardGoal < STEP_TRIGGER * 0.5) // you have completed less than half the of the steps you would need to have completed in the past hour to be on pace to meet your goal.
       {
         buzzLRA(); // inactivity buzz
       }
@@ -317,15 +317,6 @@ int getStepTrigger()
   return STEP_TRIGGER;
 }
 
-bool heartDataayNotFull()
-{
-  if (stepTimestamps[STEP_TRIGGER - 1] == 4294967295)
-  {
-    return true;
-  }
-  return false;
-}
-
 float percentOfDailyStepGoal(int totalSteps)
 {
   const float DAILY_GOAL = (float)STEP_TRIGGER * 16.00; // 16 waking hours in day
@@ -353,6 +344,8 @@ float sleepQuality(bool finalCalculation)
   float REMScore = (actualREMPercentage() / expectedREMPercentage()) * 100; // weighting: 30%, 37% in intermediate calculations
   float sleepQualityPercent = 0.00;
 
+  uint16_t data[ANALOG_COUNT];
+
   if (finalCalculation) { // include sleep chronology and record to a seperate file.
     sleepQualityPercent = min(((0.25 * sleepChronologyScore()) + (0.3 * deepScore) + (0.15 * lightScore) + (0.3 * REMScore)), 100);
     //SerialUSB.print("((0.25 * sleepChronologyScore()) + (0.3 * deepScore) + (0.15 * lightScore) + (0.3 * REMScore)): ");
@@ -370,8 +363,7 @@ float sleepQuality(bool finalCalculation)
       }
       else
       {
-        uint16_t data[ANALOG_COUNT];
-
+        
         // Read all channels to avoid SD write latency between readings.
         for (uint8_t i = 0; i < ANALOG_COUNT; i++) {
           data[i] = analogRead(i);
@@ -476,112 +468,6 @@ float getBattPercent()
     SerialUSB.println(min(batteryLeft * 83.333333, 100));
   }
   return min((batteryLeft * 83.333333), 100); // hard upper limit of 100 as it often shows over 100 when charging
-}
-
-bool microphoneConnected()
-{
-  return false; // for now, as microphone is not part of this project. if you wish to add it, remove this statement
-  //selectPort(3);
-  //Wire.beginTransmission(); // you will need to google the microphone part number to find the correct i2c address in its datasheet
-  Wire.write(1);
-  Wire.endTransmission();
-  delay(5);
-  //Wire.requestFrom(, 2); // then, plug the i2c address you found in this line and uncomment it
-  if (Wire.available() != 2)
-  {
-    SerialUSB.println();
-    return false;
-  }
-  return true;
-}
-
-bool accelConnected()
-{
-  Wire.beginTransmission(0x18);
-  Wire.write(1);
-  Wire.endTransmission();
-  delay(5);
-  Wire.requestFrom(0x18, 2);
-  if (Wire.available() != 2)
-  {
-    return false;
-  }
-  return true;
-}
-
-bool lraConnected()
-{
-  Wire.beginTransmission(0x5A);
-  Wire.write(1);
-  Wire.endTransmission();
-  delay(5);
-  Wire.requestFrom(0x5A, 2);
-  if (Wire.available() != 2)
-  {
-    return false;
-  }
-  return true;
-}
-
-bool pulseOxConnected()
-{
-  if (particleSensor.begin(Wire, I2C_SPEED_FAST)) //Use default I2C port, 400kHz speed
-  {
-    return true;
-  }
-  return false;
-}
-
-int whichWireling(int port) // determines which wireling is connected to the input port number. returns 0 = microphone; 1=accel; 2= lra; 3=pulseOx;
-{
-  Wireling.selectPort(port);
-  if (microphoneConnected())
-  {
-    microphoneSensorPresent = port + 1; // + 1 because they are initialized to 0, which continutes to represent that the sensor
-    // has not been connected in the rest of the source code
-    return 0;
-  }
-  else if (accelConnected())
-  {
-    accelSensorPresent = port + 1;
-    return 1;
-  }
-  else if (lraConnected())
-  {
-    lraSensorPresent = port + 1;
-    return 2;
-  }
-  else if (pulseOxConnected())
-  {
-    pulseOxSensorPresent = port + 1;
-    return 3;
-  }
-  else
-  {
-    return 5; // Wireling port empty
-  }
-}
-
-void checkPorts()
-{
-  for (int i = 0; i < 4; ++i)
-  {
-    if (DEBUG_MD) {
-      SerialUSB.print("Wireling: ");
-    }
-
-    if (DEBUG_MD) {
-      SerialUSB.print(whichWireling(i));
-    }
-    else {
-      whichWireling(i);
-    }
-
-    if (DEBUG_MD) {
-      SerialUSB.print("found on port ");
-      SerialUSB.println(i);
-    }
-  }
 }
 
 bool bedtimeValidation(bool &validatedPreviously, unsigned long &validationEpoch) // determines when to start calculating sleep quality based on your bedtime setting and movements around that time
@@ -703,7 +589,6 @@ int firstQuartile() { // this returns the first quartile of your heart rate when
   char buffer[line_buffer_size];
   char holdingArr[line_buffer_size];
   ifstream sdin("quartiles.txt");
-  int line_number = 0;
   int quartileTemp = 0;
   int quartileCounter = 0;
   unsigned long sum = 0; // used to calculate the mean of the quartiles at the end of the function
@@ -770,7 +655,6 @@ int thirdQuartile() { // this returns the third quartile of your heart rate when
   char buffer[line_buffer_size] = { '0', '0', '0', '0', '0', '0', 't', '\0' };
   char holdingArr[line_buffer_size] = { '0', '0', '0', '0', '0', '0', 't', '\0' };
   ifstream sdin("quartiles.txt");
-  int line_number = 0;
   int quartileTemp = 0;
   int quartileCounter = 0;
   unsigned long sum = 0; // used to calculate the mean of the quartiles at the end of the function
@@ -870,65 +754,17 @@ int thirdQuartile() { // this returns the third quartile of your heart rate when
   return (sum / quartileCounter);
 }
 
-void checkPulse() // this needs to be run extremely often to return an accurate value.
+
+void checkPulse()
 {
-  //selectPort(pulseOxSensorPresent-1);
-  long irValue = particleSensor.getIR();
-
-  if (checkForBeat(irValue) == true)
-  {
-    //We sensed a beat!
-    long delta = millis() - lastBeat;
-    lastBeat = millis();
-
-    beatsPerMinute = 60 / (delta / 1000.0);
-
-    if (beatsPerMinute < 255 && beatsPerMinute > 20)
-    {
-      rates[rateSpot++] = (byte)beatsPerMinute; //Store this reading in the heartDataay
-      rateSpot %= RATE_SIZE; //Wrap variable
-      if (validMeasurements < RATE_SIZE) {
-        ++validMeasurements;
+    if (pulseSensor.update()) {
+      if (pulseSensor.pulseValid()) {
+        beatAvg = pulseSensor.BPM();
+        saturatedOxygen = pulseSensor.oxygen();
       }
-
-      //Take average of readings
-      beatAvg = 0;
-      for (byte x = 0 ; x < min(validMeasurements, RATE_SIZE) ; x++)
-        beatAvg += rates[x];
-      beatAvg /= min(validMeasurements, RATE_SIZE);
     }
-  }
-
-  /*SerialUSB.print("IR=");
-    SerialUSB.print(irValue);
-    SerialUSB.print(", BPM=");
-    SerialUSB.print(beatsPerMinute);
-    SerialUSB.print(", Avg BPM=");
-    SerialUSB.print(beatAvg);
-
-    if (irValue < 50000) {
-    SerialUSB.print(" No finger?");
-    }
-
-    SerialUSB.println();*/
 }
 
-int32_t checkOxygenSaturation()
-{
-  //read the first 100 samples, and determine the signal range
-  for (byte i = 0; i < bufferLength; i++)
-  {
-    while (particleSensor.available() == false) {//do we have new data?
-      particleSensor.check(); //Check the sensor for new data
-    }
-    redBuffer[i] = particleSensor.getRed();
-    irBuffer[i] = particleSensor.getIR();
-
-    particleSensor.nextSample();
-  }
-  maxim_heart_rate_and_oxygen_saturation(irBuffer, bufferLength, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
-  return spo2;
-}
 
 void validateSD(String dataString, String displayString, bool firstSD)
 {
@@ -1010,11 +846,11 @@ void createString(String &displayString, String &dataString, bool firstSD, int c
       displayString += "Awake";
       displayString += ",";
     }
-    Wireling.selectPort(pulseOxSensorPresent - 1);
+    Wireling.selectPort(pulseSensorPort);
     displayString += " Oxygen Saturation: ";
-    displayString += String(checkOxygenSaturation());
+    displayString += String(saturatedOxygen);
     displayString += ",";
-    Wireling.selectPort(accelSensorPresent - 1);
+    Wireling.selectPort(accelSensorPort);
     displayString += " batt: ";
     displayString += String(battery);
   }
@@ -1041,10 +877,10 @@ void createString(String &displayString, String &dataString, bool firstSD, int c
       dataString += "Awake";
       dataString += ",";
     }
-    Wireling.selectPort(pulseOxSensorPresent - 1);
-    dataString += String(checkOxygenSaturation());
+    Wireling.selectPort(pulseSensorPort);
+    dataString += String(saturatedOxygen);
     dataString += ",";
-    Wireling.selectPort(accelSensorPresent - 1);
+    Wireling.selectPort(accelSensorPort);
     dataString += String(battery);
   }
 }
@@ -1093,7 +929,6 @@ void wakeMinute(int validationEpoch, int &emptyIntsCounter, bool &validatedPrevi
         bedtimeEpoch = rtc.getEpoch();
       }
       rtc.setEpoch(tempEpoch); // reset back to current time
-      unsigned long epochDiff = (max(bedtimeEpoch, tempEpoch) - min(bedtimeEpoch, tempEpoch));
     }
   }
 }
@@ -1324,59 +1159,6 @@ float actualREMPercentage() // returns the percentage of light sleep for the pre
   return (REMCounter / sleepStageCounter) * 100;
 }
 
-bool validatePorts() // confirms that there are no duplicate ports; only run once during setup
-{
-  if (pulseOxSensorPresent == accelSensorPresent) // these two ports have the same number?
-  {
-    if (pulseOxSensorPresent != 0) // confirm that they both aren't empty
-    {
-      return false; // oops, this shouldn't happen. alert setup that multiple wirelings have been assigned the same port number
-    }
-  }
-  if (pulseOxSensorPresent == microphoneSensorPresent) // these two ports have the same number?
-  {
-    if (pulseOxSensorPresent != 0) // confirm that they both aren't empty
-    {
-      return false; // oops, this shouldn't happen. alert setup that multiple wirelings have been assigned the same port number
-    }
-  }
-  if (pulseOxSensorPresent == lraSensorPresent) // these two ports have the same number?
-  {
-    if (pulseOxSensorPresent != 0) // confirm that they both aren't empty
-    {
-      return false; // oops, this shouldn't happen. alert setup that multiple wirelings have been assigned the same port number
-    }
-  }
-  if (accelSensorPresent == lraSensorPresent) // these two ports have the same number?
-  {
-    if (accelSensorPresent != 0) // confirm that they both aren't empty
-    {
-      return false; // oops, this shouldn't happen. alert setup that multiple wirelings have been assigned the same port number
-    }
-  }
-  if (accelSensorPresent == microphoneSensorPresent) // these two ports have the same number?
-  {
-    if (accelSensorPresent != 0) // confirm that they both aren't empty
-    {
-      return false; // oops, this shouldn't happen. alert setup that multiple wirelings have been assigned the same port number
-    }
-  }
-  if (accelSensorPresent == pulseOxSensorPresent) // these two ports have the same number?
-  {
-    if (accelSensorPresent != 0) // confirm that they both aren't empty
-    {
-      return false; // oops, this shouldn't happen. alert setup that multiple wirelings have been assigned the same port number
-    }
-  }
-  if (microphoneSensorPresent == lraSensorPresent) // these two ports have the same number?
-  {
-    if (microphoneSensorPresent != 0) // confirm that they both aren't empty
-    {
-      return false; // oops, this shouldn't happen. alert setup that multiple wirelings have been assigned the same port number
-    }
-  }
-  return true;
-}
 
 void sleepMovement(unsigned long &one, unsigned long &two, unsigned long &five, unsigned long &fifteen)
 {
@@ -1434,30 +1216,16 @@ void sleepMovement(unsigned long &one, unsigned long &two, unsigned long &five, 
 
 void buzzLRA()
 {
-  Wireling.selectPort(lraSensorPresent - 1);
-  activateLRA(2000);
-  delay(2000);
-  activateLRA(2000);
-}
+  Wireling.selectPort(lraSensorPort);
+  
+  // Set the effect to play
+  drv.setWaveform(0, 17);      // Set effect 17
+  drv.setWaveform(1, 0);       // End waveform
 
-void activateLRA(int duration)
-{
-  unsigned long startTime = millis();
-  uint8_t effect = 1;
-  while (millis() - startTime < duration) {
-    Wire.beginTransmission(0x70);
-    Wire.write(0x04 + 0);  //0x04 + port (0-3)
-    Wire.endTransmission();
-    drv.useLRA();
-    // play the effect!
-    drv.go();
-    // wait a bit
-    delay(100);
-    effect++;
-    if (effect > 117) {
-      effect = 1;
-    }
-  }
+  // Play the effect
+  drv.go();
+
+  delay(500);
 }
 
 void resetStepCounters()
@@ -1473,12 +1241,12 @@ void checkButtons(unsigned long &screenClearTime)
 {
   if(display.getButtons(TSButtonUpperLeft) || display.getButtons(TSButtonUpperRight) || display.getButtons(TSButtonLowerLeft) || display.getButtons(TSButtonLowerRight))
   {
-      int total = getTotalSteps();
-  int percent = percentOfDailyStepGoal(total);
-  int battery = getBattPercent();
-  if(rtc.getSeconds() == 0 && millis()-screenClearTime > 1000){
-  display.clearScreen();
-  screenClearTime = millis();
+    int total = getTotalSteps();
+    int percent = percentOfDailyStepGoal(total);
+    int battery = getBattPercent();
+    if(rtc.getSeconds() == 0 && millis()-screenClearTime > 1000){
+    display.clearScreen();
+    screenClearTime = millis();
   }
     display.on();
     display.setCursor(0,0);
@@ -1504,7 +1272,7 @@ void checkButtons(unsigned long &screenClearTime)
     display.println(beatAvg);
     display.setCursor(0,40);
     display.print("Oxygen: ");
-    display.println(spo2);
+    display.println(saturatedOxygen);
     display.setCursor(0,50);
     display.print("Battery %: ");
     display.println(battery);
