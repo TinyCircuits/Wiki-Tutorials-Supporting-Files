@@ -7,7 +7,7 @@
   PORT 2: 
   PORT 3: Rotary Switch Wireling
 
-  By rotating the Roatary Switch Wireling, the
+  By rotating the Rotary Switch Wireling, the
   song played by the Buzzer Wireling will change.
   An RGB LED will cycle through a few pre-defined
   colors every 1.5 seconds.
