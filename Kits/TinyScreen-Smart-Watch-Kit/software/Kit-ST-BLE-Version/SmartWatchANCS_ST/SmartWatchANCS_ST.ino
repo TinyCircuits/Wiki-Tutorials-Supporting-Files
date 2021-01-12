@@ -5,7 +5,7 @@
 //  This demo sets up the ST BLE for the Apple Notification Center Service as well
 //  as the Current Time service. Now with TinyScreen+ compatibity.
 //  Requires updated STBLE library or will not compile!
-//  
+//
 //  2.0.0 26 Oct 2017 Initial update release
 //
 //  Written by Ben Rose, TinyCircuits http://TinyCircuits.com
@@ -113,13 +113,15 @@ const FONT_INFO& font22pt = liberationSansNarrow_22ptFontInfo;
 
 void setup(void)
 {
+  display.begin();
+  display.setFlip(true);
 #if defined (ARDUINO_ARCH_AVR)
   for (int i = 0; i < 20; i++) {
     pinMode(i, INPUT_PULLUP);
   }
-  setTime(1, 1, 1, 16, 2, 2016);
+  setTime(1, 1, 1, 12, 1, 2021);
 #elif defined(ARDUINO_ARCH_SAMD)
-  for (int i = 0; i < 27; i++) {
+  for (int i = 0; i < 20; i++) {
     pinMode(i, INPUT_PULLUP);
   }
   pinMode(28, INPUT_PULLUP);
@@ -127,40 +129,37 @@ void setup(void)
   pinMode(42, INPUT_PULLUP);
   pinMode(44, INPUT_PULLUP);
   pinMode(45, INPUT_PULLUP);
-  pinMode(A4, INPUT);
-  pinMode(2, INPUT);
   RTCZ.begin();
-  RTCZ.setTime(16, 15, 1);//h,m,s
-  RTCZ.setDate(25, 7, 16);//d,m,y
-  //RTCZ.attachInterrupt(RTCwakeHandler);
-  //RTCZ.enableAlarm(RTCZ.MATCH_HHMMSS);
-  //RTCZ.setAlarmEpoch(RTCZ.getEpoch() + 1);
+  RTCZ.setTime(13, 15, 1);//h,m,s
+  RTCZ.setDate(12, 1, 21);//d,m,y
+  RTCZ.attachInterrupt(RTCwakeHandler);
+  RTCZ.setAlarmSeconds(0);         //Just to enable GCLK
+  RTCZ.enableAlarm(RTCZ.MATCH_SS); //Just to enable GCLK
   attachInterrupt(TSP_PIN_BT1, wakeHandler, FALLING);
   attachInterrupt(TSP_PIN_BT2, wakeHandler, FALLING);
   attachInterrupt(TSP_PIN_BT3, wakeHandler, FALLING);
   attachInterrupt(TSP_PIN_BT4, wakeHandler, FALLING);
 #endif
   SerialMonitorInterface.begin(115200);
-  display.begin();
-  display.setFlip(true);
   pinMode(vibratePin, OUTPUT);
   digitalWrite(vibratePin, vibratePinInactive);
   initHomeScreen();
   requestScreenOn();
-  delay(100);
   BLEsetup(&phoneConnection, "TinyWatch", BLEConnect, BLEDisconnect);
   useSecurity(BLEBond);
   advertise("TinyWatch", "7905F431-B5CE-4E99-A40F-4B1E122D00D0");
+  while (millisOffset() < 1000)BLEProcess();
 
 #if defined(ARDUINO_ARCH_SAMD)
   // https://github.com/arduino/ArduinoCore-samd/issues/142
   // Clock EIC in sleep mode so that we can use pin change interrupts
   // The RTCZero library will setup generic clock 2 to XOSC32K/32
-  // and we'll use that for the EIC. Increases power consumption by ~50uA
+  // and we'll use that for the EIC. Does not seem to increase power consumption with the current SAMD21 Arduino core.
   GCLK->CLKCTRL.reg = uint16_t(GCLK_CLKCTRL_CLKEN | GCLK_CLKCTRL_GEN_GCLK2 | GCLK_CLKCTRL_ID( GCLK_CLKCTRL_ID_EIC_Val ) );
   while (GCLK->STATUS.bit.SYNCBUSY) {}
 #endif
-  //while (millisOffset() < 1000)BLEProcess();
+
+
   //display.off();
   //while (1) RTCZ.standbyMode();
 }
@@ -174,6 +173,7 @@ uint32_t millisOffset() {
 }
 
 void loop() {
+
   BLEProcess();//Process any ACI commands or events from the NRF8001- main BLE handler, must run often. Keep main loop short.
   if (!ANCSInitStep) {
     ANCSInit();
@@ -213,7 +213,7 @@ void loop() {
   if (displayOn && (millisOffset() > mainDisplayUpdateInterval + lastMainDisplayUpdate)) {
     updateMainDisplay();
   }
-  if (millisOffset() > sleepTimer + ((unsigned long)sleepTimeout*1000ul)) {
+  if (millisOffset() > sleepTimer + ((unsigned long)sleepTimeout * 1000ul)) {
     if (displayOn) {
       displayOn = 0;
       display.off();
