@@ -1,5 +1,5 @@
 /*
-  An RTC demo for the TinyCircuits SAMD21 boards: TinyZero, TinyScreen+, RobotZero, and WirelingZero.
+  An RTC demo for the SAMD21 boards: TinyZero, TinyScreen+, RobotZero, and WirelingZero.
 */
 
 #include <RTCZero.h>
@@ -9,14 +9,13 @@
 #include <SoftwareSerial.h>
 #elif defined(ARDUINO_ARCH_SAMD)
 #define SerialMonitorInterface SerialUSB
-#include "SoftwareSerialZero.h"
 #endif
 
 RTCZero rtc; // create an rtc object
 
 /* Change these values to set the current initial time */
-const byte hours = 14;
-const byte minutes = 45;
+const byte hours = 13;
+const byte minutes = 51;
 const byte seconds = 0;
 
 /* Change these values to set the current initial date */
@@ -43,8 +42,10 @@ void setup() {
 }
 
 void loop() {
-  print_RTC(); // print RTC data
-  delay(1000); // wait 1 second
+  print_RTC();
+  SerialMonitorInterface.println("- - - - - - - - - - - - - - - -");
+
+  delay(1000);
 }
 
 void print2digits(int number) {
@@ -57,7 +58,7 @@ void print2digits(int number) {
 void print_time() {
   SerialMonitorInterface.print("Time: ");
   
-  // Print time...
+  // ...and time
   print2digits(rtc.getHours());
   SerialMonitorInterface.print(":");
   print2digits(rtc.getMinutes());
@@ -82,5 +83,4 @@ void print_date() {
 void print_RTC() {
   print_time();
   print_date();
-  SerialMonitorInterface.println("- - - - - - - - - - - - - - - -");
 }
