@@ -138,7 +138,7 @@ void loop() {
   Gps_Serial.read(); 
   Gps_Serial.read(); //skip two characters
   char c = Gps_Serial.read();
-  //determine senetence type
+  //determine sentence type
   if (c == 'R' || c == 'G') {
     c = Gps_Serial.read();
     if (c == 'M') {
@@ -147,9 +147,11 @@ void loop() {
       logNMEA(2);
     }
   }
+  SerialMonitorInterface.print("timestamp-not-loop: "); SerialMonitorInterface.println(millis());
 
   // Waits 10 seconds before reading next NMEA string
   while (millis() - startTime < 10000) {
+    SerialMonitorInterface.print("timestamp-loop: "); SerialMonitorInterface.println(millis()); 
     Gps_Serial.read(); // clears GPS serial buffer
   }
 }

@@ -135,7 +135,7 @@ void loop() {
   Gps_Serial.read(); 
   Gps_Serial.read(); //skip two characters
   char c = Gps_Serial.read();
-  //determine senetence type
+  //determine sentence type
   if (c == 'R' || c == 'G') {
     c = Gps_Serial.read();
     if (c == 'M') {
@@ -250,4 +250,3 @@ void eraseData(unsigned long address) {
     index += 4096;
   }
 }
-
