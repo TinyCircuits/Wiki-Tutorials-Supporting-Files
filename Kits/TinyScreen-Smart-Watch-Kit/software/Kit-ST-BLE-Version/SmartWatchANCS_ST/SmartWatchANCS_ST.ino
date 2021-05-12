@@ -1,12 +1,13 @@
 //-------------------------------------------------------------------------------
 //  TinyCircuits TinyScreen/ST BLE ANCS Smartwatch Example
-//  Last Updated 26 October 2017
+//  Last Updated 12 May 2021
 //
 //  This demo sets up the ST BLE for the Apple Notification Center Service as well
 //  as the Current Time service. Now with TinyScreen+ compatibity.
 //  Requires updated STBLE library or will not compile!
 //
 //  2.0.0 26 Oct 2017 Initial update release
+//  2.0.1 12 May 2021 Fixed a TinyScreen+ endless sleep mode bug
 //
 //  Written by Ben Rose, TinyCircuits http://TinyCircuits.com
 //
@@ -113,14 +114,16 @@ const FONT_INFO& font22pt = liberationSansNarrow_22ptFontInfo;
 
 void setup(void)
 {
-  display.begin();
-  display.setFlip(true);
 #if defined (ARDUINO_ARCH_AVR)
   for (int i = 0; i < 20; i++) {
     pinMode(i, INPUT_PULLUP);
   }
   setTime(1, 1, 1, 12, 1, 2021);
+  display.begin();
+  display.setFlip(true);
 #elif defined(ARDUINO_ARCH_SAMD)
+  display.begin();
+  display.setFlip(true);
   for (int i = 0; i < 20; i++) {
     pinMode(i, INPUT_PULLUP);
   }
@@ -131,7 +134,7 @@ void setup(void)
   pinMode(45, INPUT_PULLUP);
   RTCZ.begin();
   RTCZ.setTime(13, 15, 1);//h,m,s
-  RTCZ.setDate(12, 1, 21);//d,m,y
+  RTCZ.setDate(12, 5, 21);//d,m,y
   RTCZ.attachInterrupt(RTCwakeHandler);
   RTCZ.setAlarmSeconds(0);         //Just to enable GCLK
   RTCZ.enableAlarm(RTCZ.MATCH_SS); //Just to enable GCLK
