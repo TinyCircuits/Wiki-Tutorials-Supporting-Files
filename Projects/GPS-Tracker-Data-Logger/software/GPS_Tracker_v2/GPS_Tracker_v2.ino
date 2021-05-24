@@ -147,11 +147,9 @@ void loop() {
       logNMEA(2);
     }
   }
-  SerialMonitorInterface.print("timestamp-not-loop: "); SerialMonitorInterface.println(millis());
 
   // Waits 10 seconds before reading next NMEA string
   while (millis() - startTime < 10000) {
-    SerialMonitorInterface.print("timestamp-loop: "); SerialMonitorInterface.println(millis()); 
     Gps_Serial.read(); // clears GPS serial buffer
   }
 }
